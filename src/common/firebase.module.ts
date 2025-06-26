@@ -1,15 +1,18 @@
 import { Module, Global } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import * as admin from 'firebase-admin';
-import * as path from 'path';
 
 @Global()
 @Module({
   providers: [
     {
       provide: 'FIRESTORE',
-      useFactory: () => {
-        const serviceAccount = require(
-          path.resolve(__dirname, '../../firebase-service-account.json'),
+      useFactory: (configService: ConfigService) => {
+        const serviceAccount = JSON.parse(
+          Buffer.from(
+            configService.get<string>('FIREBASE_KEY_B64')!,
+            'base64',
+          ).toString('utf-8'),
         );
 
         if (!admin.apps.length) {
@@ -20,6 +23,7 @@ import * as path from 'path';
 
         return admin.firestore();
       },
+      inject: [ConfigService],
     },
   ],
   exports: ['FIRESTORE'],
