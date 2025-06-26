@@ -7,10 +7,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
-import mongoose from 'mongoose';
-
-import { ErrorData } from '../types';
-import { errorResponse } from '../app';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -75,12 +71,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       context,
     });
 
-    const errorData: ErrorData = {
+    const errorData = {
       name,
       message,
       timestamp: new Date().toISOString(),
     };
-    const error = errorResponse(errorData, status);
+    const error = { success: false, errorData, status };
 
     response.status(status).json(error);
   }

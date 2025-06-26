@@ -1,29 +1,28 @@
-import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { firestore } from 'firebase-admin';
 import { JwtService } from '@nestjs/jwt';
+import { hash, verify } from 'argon2';
 
-import { User, UserDocument } from '../user/entities/user.entity';
-import { SignInResponseDto } from './dto/sign-in.dto';
-import { AppResponse, UserResponse } from '../../common/types';
-import { successResponse } from '../../common/app';
+import { User } from '../user/entities/user.entity';
+
+import { SignInDto, SignInResponseDto } from './dto/sign-in.dto';
 import { CreateUserDto } from './dto/create-user.dto';
-import { USER_ATTRIBUTES } from '../../common/constants';
-import { DBUtils } from '../../common/Utils';
+import { UnauthorizedException } from '../../common/exceptions';
 
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @Inject('FIRESTORE') private readonly firestore: firestore.Firestore,
     private config: ConfigService,
     private jwt: JwtService,
   ) {}
 
-  private async signToken(
-    id: string,
-    email: string,
-  ): Promise<AppResponse<SignInResponseDto>> {
+  private userCollection() {
+    return this.firestore.collection('users');
+  }
+
+  private async signToken(id: string, email: string) {
     const payload = {
       sub: id,
       email,
@@ -36,21 +35,61 @@ export class AuthService {
       secret,
     });
 
-    return successResponse('Signed In', { email, accessToken: token });
+    return {
+      success: true,
+      status: HttpStatus.OK,
+      message: 'Signed In',
+      data: { email, accessToken: token },
+    };
   }
 
-  async register(
-    createUserDto: CreateUserDto,
-  ): Promise<AppResponse<UserResponse>> {
+  async register(createUserDto: CreateUserDto) {
     try {
-      return DBUtils.createEntity(
-        this.userModel,
-        createUserDto,
-        USER_ATTRIBUTES,
-        'User created successfully',
-      );
+      const hashedPassword = await hash(createUserDto.password);
+
+      const user: User = {
+        ...createUserDto,
+        password: hashedPassword,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+
+      const userRef = await this.userCollection().add(user);
+      return {
+        success: true,
+        status: HttpStatus.CREATED,
+        message: 'User registered successfully',
+        data: {
+          id: userRef.id,
+          ...user,
+        },
+      };
     } catch (error) {
       throw error;
     }
+  }
+
+  async signIn(body: SignInDto) {
+    const snapshot = await this.userCollection()
+      .where('email', '==', body.email)
+      .get();
+    if (!snapshot || snapshot.empty) {
+      throw new UnauthorizedException(
+        'Invalid Credentials',
+        'The email you entered does not match any account',
+      );
+    }
+
+    const user = snapshot.docs[0];
+
+    const passwordValid = await verify(user.data().password, body.password);
+    if (!passwordValid) {
+      throw new UnauthorizedException(
+        'Invalid credentials',
+        'The password you entered is incorrect',
+      );
+    }
+
+    return await this.signToken(user.id, user.data().email);
   }
 }

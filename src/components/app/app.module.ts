@@ -1,9 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { MongooseModule } from '@nestjs/mongoose';
 
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { FirebaseModule } from '../../common/firebase.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
@@ -12,17 +12,7 @@ import { AuthModule } from '../auth/auth.module';
       isGlobal: true,
       envFilePath: ['.env'],
     }),
-    MongooseModule.forRootAsync({
-      useFactory: (configService: ConfigService) => ({
-        uri: configService.get<string>('MONGO_URI'),
-        connectionFactory: (connection) => {
-          connection.set('debug', true);
-          return connection;
-        },
-        maxPoolSize: 100,
-      }),
-      inject: [ConfigService],
-    }),
+    FirebaseModule,
     AuthModule,
   ],
   controllers: [AppController],
